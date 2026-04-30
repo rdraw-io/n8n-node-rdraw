@@ -107,7 +107,7 @@ export class RDraw implements INodeType {
 				default: '',
 			},
 			{
-				displayName: 'Carregar Schema do Relatório',
+				displayName: 'Carregar Schema Do Relatório Name or ID',
 				name: 'loadSchema',
 				type: 'options',
 				typeOptions: {
@@ -116,7 +116,7 @@ export class RDraw implements INodeType {
 				},
 				default: '',
 				description:
-					'Carrega o schema do relatório a partir do rDraw. Selecciona a opção apresentada e copia o JSON exibido para o campo "Data Sources" abaixo.',
+					'Carrega o schema do relatório a partir do rDraw. Selecciona a opção apresentada e copia o JSON exibido para o campo "Data Sources" abaixo. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 			{
 				displayName: 'Data Sources',
@@ -151,7 +151,7 @@ export class RDraw implements INodeType {
 				default: {},
 				options: [
 					{
-						displayName: 'Timeout (ms)',
+						displayName: 'Timeout (Ms)',
 						name: 'timeout',
 						type: 'number',
 						typeOptions: { minValue: 1000 },
@@ -171,9 +171,9 @@ export class RDraw implements INodeType {
 				if (!reportId) {
 					return [
 						{
-							name: '⚠️ Define primeiro o Report ID acima',
+							name: '⚠️ Define Primeiro O Report ID Acima',
 							value: '',
-							description: 'Preenche o campo Report ID antes de carregar o schema.',
+							description: 'Preenche o campo Report ID antes de carregar o schema',
 						},
 					];
 				}
@@ -193,9 +193,9 @@ export class RDraw implements INodeType {
 					if (!schema?.dataSources) {
 						return [
 							{
-								name: '❌ Resposta inválida da API',
+								name: '❌ Resposta Inválida Da API',
 								value: '',
-								description: 'O endpoint não retornou dataSources.',
+								description: 'O endpoint não retornou dataSources',
 							},
 						];
 					}
@@ -216,7 +216,7 @@ export class RDraw implements INodeType {
 						{
 							name: `❌ Erro ao carregar schema: ${(error as Error).message}`,
 							value: '',
-							description: 'Verifica a credencial e o Report ID.',
+							description: 'Verifica a credencial e o Report ID',
 						},
 					];
 				}
