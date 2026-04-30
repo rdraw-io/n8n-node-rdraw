@@ -33,7 +33,7 @@ export class RDrawApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: 'https://api.rdraw.io',
-			url: '/api/health',
+			url: '/api/auth/verify',
 			method: 'GET',
 		},
 	};
