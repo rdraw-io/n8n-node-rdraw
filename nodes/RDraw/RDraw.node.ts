@@ -68,27 +68,6 @@ function buildExampleFromSchema(schema: SchemaResponse['dataSources']): Record<s
 	return example;
 }
 
-function describeNode(node: SchemaNode): string {
-	if (Array.isArray(node)) {
-		const inner = node[0] ?? {};
-		const count = typeof inner === 'object' && inner !== null ? Object.keys(inner).length : 0;
-		return `array de ${count} campo${count === 1 ? '' : 's'}`;
-	}
-	if (typeof node === 'object' && node !== null) {
-		const count = Object.keys(node).length;
-		return `objeto com ${count} campo${count === 1 ? '' : 's'}`;
-	}
-	return 'valor';
-}
-
-function topLevelKeysMatch(current: unknown, schema: Record<string, unknown>): boolean {
-	if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
-	const currentKeys = Object.keys(current as Record<string, unknown>).sort();
-	const schemaKeys = Object.keys(schema).sort();
-	if (currentKeys.length !== schemaKeys.length) return false;
-	return currentKeys.every((k, i) => k === schemaKeys[i]);
-}
-
 export class RDraw implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'rDraw',
@@ -97,7 +76,7 @@ export class RDraw implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["format"].toUpperCase()}}',
-		description: 'Gera relatórios (PDF, XLSX, DOCX) a partir de templates rDraw',
+		description: 'Generate reports (PDF, XLSX, DOCX) from rDraw templates',
 		defaults: {
 			name: 'rDraw',
 		},
@@ -118,7 +97,7 @@ export class RDraw implements INodeType {
 				default: '',
 				required: true,
 				placeholder: 'edc6fe12-49f5-458b-aa23-d6954e005266',
-				description: 'ID do template do relatório no rDraw',
+				description: 'ID of the rDraw report template',
 			},
 			{
 				displayName: 'Format',
@@ -130,42 +109,27 @@ export class RDraw implements INodeType {
 					{ name: 'XLSX', value: 'xlsx' },
 				],
 				default: 'pdf',
-				description: 'Formato de saída do relatório',
+				description: 'Output format of the report',
 			},
 			{
-				displayName:
-					'💡 Dica: depois de definires a credencial e o Report ID, clica em "Carregar Schema" abaixo para preencher automaticamente o template dos Data Sources com base no relatório.',
-				name: 'schemaNotice',
-				type: 'notice',
-				default: '',
-			},
-			{
-				displayName: 'Carregar Schema Do Relatório Name or ID',
-				name: 'loadSchema',
+				displayName: 'Data Sources Name or ID',
+				name: 'dataSources',
 				type: 'options',
 				typeOptions: {
 					loadOptionsMethod: 'loadReportSchema',
 					loadOptionsDependsOn: ['reportId'],
 				},
 				default: '',
-				description:
-					'Carrega o schema do relatório a partir do rDraw. Selecciona a opção apresentada e copia o JSON exibido para o campo "Data Sources" abaixo. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
-			},
-			{
-				displayName: 'Data Sources',
-				name: 'dataSources',
-				type: 'json',
-				default: '={\n  "Alunos": []\n}',
 				required: true,
 				description:
-					'Objecto JSON com os dataSources do template. Cada chave é o nome de um dataSource e o valor é um array de registos. Usa "Carregar Schema" acima para gerar o template.',
+					'Loads the data sources schema from the report. Select the option to fill in the JSON template, then switch to Expression mode (fx) to edit values. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 			{
 				displayName: 'Binary Property',
 				name: 'binaryPropertyName',
 				type: 'string',
 				default: 'data',
-				description: 'Nome da propriedade binária onde o ficheiro gerado será colocado',
+				description: 'Name of the binary property to write the generated file to',
 			},
 			{
 				displayName: 'File Name',
@@ -174,13 +138,13 @@ export class RDraw implements INodeType {
 				default: '',
 				placeholder: 'report',
 				description:
-					'Nome do ficheiro (sem extensão). Se vazio, usa "report". A extensão é adicionada conforme o formato.',
+					'File name without extension. Defaults to "report". The extension is appended based on the selected format.',
 			},
 			{
 				displayName: 'Additional Options',
 				name: 'additionalOptions',
 				type: 'collection',
-				placeholder: 'Adicionar opção',
+				placeholder: 'Add option',
 				default: {},
 				options: [
 					{
@@ -190,7 +154,7 @@ export class RDraw implements INodeType {
 						typeOptions: { minValue: 1000 },
 						default: DEFAULT_TIMEOUT_MS,
 						description:
-							'Tempo máximo de espera pela resposta da API rDraw, em milissegundos. Default: 120000 (2 minutos).',
+							'Maximum time to wait for the rDraw API response, in milliseconds. Default: 120000 (2 minutes).',
 					},
 				],
 			},
@@ -204,9 +168,9 @@ export class RDraw implements INodeType {
 				if (!reportId) {
 					return [
 						{
-							name: '⚠️ Define Primeiro O Report ID Acima',
+							name: '⚠️ Set Report ID first',
 							value: '',
-							description: 'Preenche o campo Report ID antes de carregar o schema',
+							description: 'Fill in the Report ID field above before loading the schema',
 						},
 					];
 				}
@@ -226,9 +190,9 @@ export class RDraw implements INodeType {
 					if (!schema?.dataSources) {
 						return [
 							{
-								name: '❌ Resposta Inválida Da API',
+								name: '❌ Invalid API response',
 								value: '',
-								description: 'O endpoint não retornou dataSources',
+								description: 'The endpoint did not return dataSources',
 							},
 						];
 					}
@@ -237,48 +201,20 @@ export class RDraw implements INodeType {
 					const jsonText = JSON.stringify(example, null, 2);
 					const reportName = schema.reportName ?? reportId;
 
-					const currentRaw = this.getCurrentNodeParameter('dataSources');
-					let currentParsed: unknown = currentRaw;
-					if (typeof currentRaw === 'string') {
-						try {
-							currentParsed = JSON.parse(currentRaw);
-						} catch {
-							currentParsed = undefined;
-						}
-					}
-					const matches = topLevelKeysMatch(
-						currentParsed,
-						example as Record<string, unknown>,
-					);
-					const headerName = matches
-						? `✅ ${reportName} — schema já está actualizado`
-						: `📥 ${reportName} — copia o JSON para Data Sources`;
-					const headerDescription = matches
-						? 'As chaves do Data Sources actual coincidem com o schema do template.'
-						: 'Selecciona esta opção e copia o JSON apresentado para o campo Data Sources.';
-
-					const dsOptions: INodePropertyOptions[] = Object.entries(schema.dataSources).map(
-						([name, node]) => ({
-							name: `📋 ${name} — ${describeNode(node)}`,
-							value: '',
-							description: JSON.stringify(buildExampleFromNode(node), null, 2),
-						}),
-					);
-
 					return [
 						{
-							name: headerName,
+							name: `📥 Load schema for "${reportName}"`,
 							value: jsonText,
-							description: headerDescription + '\n\n' + jsonText,
+							description:
+								'Selecting this fills the field with the schema JSON. Switch to Expression mode (fx) to edit values.',
 						},
-						...dsOptions,
 					];
 				} catch (error) {
 					return [
 						{
-							name: `❌ Erro ao carregar schema: ${(error as Error).message}`,
+							name: `❌ Failed to load schema: ${(error as Error).message}`,
 							value: '',
-							description: 'Verifica a credencial e o Report ID',
+							description: 'Check the credential and the Report ID',
 						},
 					];
 				}
@@ -309,7 +245,7 @@ export class RDraw implements INodeType {
 					} catch (err) {
 						throw new NodeOperationError(
 							this.getNode(),
-							`O campo "Data Sources" não é um JSON válido: ${(err as Error).message}`,
+							`The "Data Sources" field is not valid JSON: ${(err as Error).message}`,
 							{ itemIndex: i },
 						);
 					}
@@ -332,7 +268,7 @@ export class RDraw implements INodeType {
 				if (!responseData?.data) {
 					throw new NodeOperationError(
 						this.getNode(),
-						'A resposta da API rDraw não contém o campo "data" com o conteúdo do relatório.',
+						'The rDraw API response does not contain a "data" field with the report content.',
 						{ itemIndex: i },
 					);
 				}
