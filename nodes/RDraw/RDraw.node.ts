@@ -25,35 +25,68 @@ const FORMAT_META: Record<ReportFormat, { mimeType: string; extension: string }>
 const API_BASE_URL = 'https://api.rdraw.io';
 const DEFAULT_TIMEOUT_MS = 120000;
 
+type SchemaNode = string | SchemaObject | SchemaArray;
+type SchemaObject = { [key: string]: SchemaNode };
+type SchemaArray = [SchemaObject];
+
 type SchemaResponse = {
 	reportId: string;
 	reportName?: string;
-	dataSources: Record<string, Array<Record<string, string>>>;
+	dataSources: Record<string, SchemaNode>;
 };
 
-function buildExampleFromSchema(schema: SchemaResponse['dataSources']): Record<string, unknown[]> {
-	const example: Record<string, unknown[]> = {};
-	for (const [dsName, rows] of Object.entries(schema)) {
-		const sampleRow = rows?.[0] ?? {};
-		const filledRow: Record<string, unknown> = {};
-		for (const [field, type] of Object.entries(sampleRow)) {
-			switch (type) {
-				case 'number':
-					filledRow[field] = 0;
-					break;
-				case 'boolean':
-					filledRow[field] = false;
-					break;
-				case 'date':
-					filledRow[field] = '';
-					break;
-				default:
-					filledRow[field] = '';
-			}
-		}
-		example[dsName] = [filledRow];
+function defaultForType(type: string): unknown {
+	switch (type) {
+		case 'number':
+			return 0;
+		case 'boolean':
+			return false;
+		default:
+			return '';
+	}
+}
+
+function buildExampleFromNode(node: SchemaNode): unknown {
+	if (typeof node === 'string') {
+		return defaultForType(node);
+	}
+	if (Array.isArray(node)) {
+		return [buildExampleFromNode(node[0] ?? {})];
+	}
+	const result: Record<string, unknown> = {};
+	for (const [field, child] of Object.entries(node)) {
+		result[field] = buildExampleFromNode(child);
+	}
+	return result;
+}
+
+function buildExampleFromSchema(schema: SchemaResponse['dataSources']): Record<string, unknown> {
+	const example: Record<string, unknown> = {};
+	for (const [dsName, node] of Object.entries(schema)) {
+		example[dsName] = buildExampleFromNode(node);
 	}
 	return example;
+}
+
+function describeNode(node: SchemaNode): string {
+	if (Array.isArray(node)) {
+		const inner = node[0] ?? {};
+		const count = typeof inner === 'object' && inner !== null ? Object.keys(inner).length : 0;
+		return `array de ${count} campo${count === 1 ? '' : 's'}`;
+	}
+	if (typeof node === 'object' && node !== null) {
+		const count = Object.keys(node).length;
+		return `objeto com ${count} campo${count === 1 ? '' : 's'}`;
+	}
+	return 'valor';
+}
+
+function topLevelKeysMatch(current: unknown, schema: Record<string, unknown>): boolean {
+	if (!current || typeof current !== 'object' || Array.isArray(current)) return false;
+	const currentKeys = Object.keys(current as Record<string, unknown>).sort();
+	const schemaKeys = Object.keys(schema).sort();
+	if (currentKeys.length !== schemaKeys.length) return false;
+	return currentKeys.every((k, i) => k === schemaKeys[i]);
 }
 
 export class RDraw implements INodeType {
@@ -204,12 +237,41 @@ export class RDraw implements INodeType {
 					const jsonText = JSON.stringify(example, null, 2);
 					const reportName = schema.reportName ?? reportId;
 
+					const currentRaw = this.getCurrentNodeParameter('dataSources');
+					let currentParsed: unknown = currentRaw;
+					if (typeof currentRaw === 'string') {
+						try {
+							currentParsed = JSON.parse(currentRaw);
+						} catch {
+							currentParsed = undefined;
+						}
+					}
+					const matches = topLevelKeysMatch(
+						currentParsed,
+						example as Record<string, unknown>,
+					);
+					const headerName = matches
+						? `✅ ${reportName} — schema já está actualizado`
+						: `📥 ${reportName} — copia o JSON para Data Sources`;
+					const headerDescription = matches
+						? 'As chaves do Data Sources actual coincidem com o schema do template.'
+						: 'Selecciona esta opção e copia o JSON apresentado para o campo Data Sources.';
+
+					const dsOptions: INodePropertyOptions[] = Object.entries(schema.dataSources).map(
+						([name, node]) => ({
+							name: `📋 ${name} — ${describeNode(node)}`,
+							value: '',
+							description: JSON.stringify(buildExampleFromNode(node), null, 2),
+						}),
+					);
+
 					return [
 						{
-							name: `✅ ${reportName} — copia o JSON para Data Sources`,
+							name: headerName,
 							value: jsonText,
-							description: jsonText,
+							description: headerDescription + '\n\n' + jsonText,
 						},
+						...dsOptions,
 					];
 				} catch (error) {
 					return [
