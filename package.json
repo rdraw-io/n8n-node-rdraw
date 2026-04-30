@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-rdraw",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "description": "Nó para integração com a API de geração de documentos rdraw.io",
     "license": "MIT",
     "homepage": "https://rdraw.io",
