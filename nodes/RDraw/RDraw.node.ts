@@ -168,7 +168,7 @@ export class RDraw implements INodeType {
 				if (!reportId) {
 					return [
 						{
-							name: '⚠️ Set Report ID first',
+							name: '⚠️ Set Report ID First',
 							value: '',
 							description: 'Fill in the Report ID field above before loading the schema',
 						},
@@ -190,7 +190,7 @@ export class RDraw implements INodeType {
 					if (!schema?.dataSources) {
 						return [
 							{
-								name: '❌ Invalid API response',
+								name: '❌ Invalid API Response',
 								value: '',
 								description: 'The endpoint did not return dataSources',
 							},
