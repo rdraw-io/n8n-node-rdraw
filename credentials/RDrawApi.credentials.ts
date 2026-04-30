@@ -8,7 +8,7 @@ import {
 export class RDrawApi implements ICredentialType {
 	name = 'rDrawApi';
 	displayName = 'rDraw API';
-	documentationUrl = 'https://rdraw.io/docs';
+	documentationUrl = 'https://api.rdraw.io/docs';
 	icon = 'file:rdraw.svg' as const;
 	properties: INodeProperties[] = [
 		{

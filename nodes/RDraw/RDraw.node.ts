@@ -1,6 +1,8 @@
 import type {
 	IExecuteFunctions,
+	ILoadOptionsFunctions,
 	INodeExecutionData,
+	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
@@ -19,6 +21,40 @@ const FORMAT_META: Record<ReportFormat, { mimeType: string; extension: string }>
 		extension: 'docx',
 	},
 };
+
+const API_BASE_URL = 'https://api.rdraw.io';
+const DEFAULT_TIMEOUT_MS = 120000;
+
+type SchemaResponse = {
+	reportId: string;
+	reportName?: string;
+	dataSources: Record<string, Array<Record<string, string>>>;
+};
+
+function buildExampleFromSchema(schema: SchemaResponse['dataSources']): Record<string, unknown[]> {
+	const example: Record<string, unknown[]> = {};
+	for (const [dsName, rows] of Object.entries(schema)) {
+		const sampleRow = rows?.[0] ?? {};
+		const filledRow: Record<string, unknown> = {};
+		for (const [field, type] of Object.entries(sampleRow)) {
+			switch (type) {
+				case 'number':
+					filledRow[field] = 0;
+					break;
+				case 'boolean':
+					filledRow[field] = false;
+					break;
+				case 'date':
+					filledRow[field] = '';
+					break;
+				default:
+					filledRow[field] = '';
+			}
+		}
+		example[dsName] = [filledRow];
+	}
+	return example;
+}
 
 export class RDraw implements INodeType {
 	description: INodeTypeDescription = {
@@ -64,13 +100,32 @@ export class RDraw implements INodeType {
 				description: 'Formato de saída do relatório',
 			},
 			{
+				displayName:
+					'💡 Dica: depois de definires a credencial e o Report ID, clica em "Carregar Schema" abaixo para preencher automaticamente o template dos Data Sources com base no relatório.',
+				name: 'schemaNotice',
+				type: 'notice',
+				default: '',
+			},
+			{
+				displayName: 'Carregar Schema do Relatório',
+				name: 'loadSchema',
+				type: 'options',
+				typeOptions: {
+					loadOptionsMethod: 'loadReportSchema',
+					loadOptionsDependsOn: ['reportId'],
+				},
+				default: '',
+				description:
+					'Carrega o schema do relatório a partir do rDraw. Selecciona a opção apresentada e copia o JSON exibido para o campo "Data Sources" abaixo.',
+			},
+			{
 				displayName: 'Data Sources',
 				name: 'dataSources',
 				type: 'json',
 				default: '={\n  "Alunos": []\n}',
 				required: true,
 				description:
-					'Objecto JSON com os dataSources do template. Cada chave é o nome de um dataSource e o valor é um array de registos.',
+					'Objecto JSON com os dataSources do template. Cada chave é o nome de um dataSource e o valor é um array de registos. Usa "Carregar Schema" acima para gerar o template.',
 			},
 			{
 				displayName: 'Binary Property',
@@ -88,7 +143,85 @@ export class RDraw implements INodeType {
 				description:
 					'Nome do ficheiro (sem extensão). Se vazio, usa "report". A extensão é adicionada conforme o formato.',
 			},
+			{
+				displayName: 'Additional Options',
+				name: 'additionalOptions',
+				type: 'collection',
+				placeholder: 'Adicionar opção',
+				default: {},
+				options: [
+					{
+						displayName: 'Timeout (ms)',
+						name: 'timeout',
+						type: 'number',
+						typeOptions: { minValue: 1000 },
+						default: DEFAULT_TIMEOUT_MS,
+						description:
+							'Tempo máximo de espera pela resposta da API rDraw, em milissegundos. Default: 120000 (2 minutos).',
+					},
+				],
+			},
 		],
+	};
+
+	methods = {
+		loadOptions: {
+			async loadReportSchema(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const reportId = (this.getCurrentNodeParameter('reportId') as string)?.trim();
+				if (!reportId) {
+					return [
+						{
+							name: '⚠️ Define primeiro o Report ID acima',
+							value: '',
+							description: 'Preenche o campo Report ID antes de carregar o schema.',
+						},
+					];
+				}
+
+				try {
+					const schema = (await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'rDrawApi',
+						{
+							method: 'GET',
+							url: `${API_BASE_URL}/api/reports/${encodeURIComponent(reportId)}/schema`,
+							json: true,
+							timeout: 30000,
+						},
+					)) as SchemaResponse;
+
+					if (!schema?.dataSources) {
+						return [
+							{
+								name: '❌ Resposta inválida da API',
+								value: '',
+								description: 'O endpoint não retornou dataSources.',
+							},
+						];
+					}
+
+					const example = buildExampleFromSchema(schema.dataSources);
+					const jsonText = JSON.stringify(example, null, 2);
+					const reportName = schema.reportName ?? reportId;
+
+					return [
+						{
+							name: `✅ ${reportName} — copia o JSON para Data Sources`,
+							value: jsonText,
+							description: jsonText,
+						},
+					];
+				} catch (error) {
+					return [
+						{
+							name: `❌ Erro ao carregar schema: ${(error as Error).message}`,
+							value: '',
+							description: 'Verifica a credencial e o Report ID.',
+						},
+					];
+				}
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -102,6 +235,10 @@ export class RDraw implements INodeType {
 				const dataSourcesRaw = this.getNodeParameter('dataSources', i);
 				const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
 				const fileNameInput = (this.getNodeParameter('fileName', i, '') as string).trim();
+				const additionalOptions = this.getNodeParameter('additionalOptions', i, {}) as {
+					timeout?: number;
+				};
+				const timeout = additionalOptions.timeout ?? DEFAULT_TIMEOUT_MS;
 
 				let dataSources: unknown;
 				if (typeof dataSourcesRaw === 'string') {
@@ -123,9 +260,10 @@ export class RDraw implements INodeType {
 					'rDrawApi',
 					{
 						method: 'POST',
-						url: 'https://api.rdraw.io/api/generate',
+						url: `${API_BASE_URL}/api/generate`,
 						body: { reportId, format, dataSources },
 						json: true,
+						timeout,
 					},
 				)) as { data?: string; success?: boolean };
 

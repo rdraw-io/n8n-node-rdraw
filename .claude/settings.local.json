@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -H \"X-API-Key: rw_Fl2dax5iytUxeSzWj2XfLry60ROmr75Q\" \"https://api.rdraw.io/api/reports/fb80f82b-d13f-497b-9e70-2bcc893fb81e/schema\" --max-time 30)",
+      "Bash(curl -s -H \"X-API-Key: rw_Fl2dax5iytUxeSzWj2XfLry60ROmr75Q\" \"https://api.rdraw.io/api/reports/d7562afa-4029-4230-94cb-b2bd46fd8575/schema\" --max-time 30)"
+    ]
+  }
+}
